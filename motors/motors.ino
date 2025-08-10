@@ -50,9 +50,6 @@ void setup() {
   pinMode(d1, OUTPUT);
   pinMode(d2, OUTPUT);
   pinMode(dena, OUTPUT);
-  pinMode(LeftX, INPUT);
-  pinMode(LeftY, INPUT);
-  pinMode(RightX, INPUT);
   delay(100);
 
   Serial.begin(115200);    // Serial monitor (USB)
