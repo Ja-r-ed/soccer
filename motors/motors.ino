@@ -1,6 +1,9 @@
 
 #include <Arduino.h>
+#include <Adafruit_BNO08x.h>
 
+Adafruit_BNO08x bno;
+float yawOffset;
 
 int M1a = 13;
 int M1b = 12;
@@ -66,6 +69,8 @@ void setup() {
 
   Serial.begin(115200);    // Serial monitor (USB)
   Serial1.begin(9600);     // Serial1 for communication with ESP32
+
+  setupBNO08x(); // Initialize BNO08x sensor
 }
 
 void loop()
@@ -106,17 +111,31 @@ void loop()
     Serial.println();
     */
   }
-
+  // Serial.print(list[0]);
+  // Serial.print(list[1]);
   Serial.print(getAngleDegrees(list[0], list[1]));
   Serial.print(" ");
-  Serial.print(getDistance(list[0], list[1]));
+  Serial.print(getDistance(list[0], list[1])*getDistance(list[0], list[1])*getDistance(list[0], list[1]));
   Serial.print(" ");
-  Serial.println(list[2]);
-  drive(getAngleDegrees(list[0], list[1]), getDistance(list[0], list[1]), list[2]);
-  if(list[5]) {stopdribble();}
-  if(list[6]) {kickWithDribbler();}
-  if(list[7]) {dribble();}
-  if(list[8]) {resetGyro();}
+  Serial.print(list[2]);
+  Serial.print(" ");
+  Serial.print(list[3]);
+  Serial.print(" ");
+  Serial.print(list[4]);
+  Serial.print(" ");
+  Serial.print(list[5]);
+  Serial.print(" ");
+  Serial.print(list[6]);
+  Serial.print(" ");
+  Serial.println(list[7]);
+  Serial.println(getYaw());
+  // Serial.println(yawOffset);
+  FieldRelativeDrive(getAngleDegrees(list[0], list[1]), getDistance(list[0], list[1]), list[2], getYaw());
+  if(list[4] > 0.5) {stopdribble();}
+  if(list[5] > 0.5) {kickWithDribbler();}
+  if(list[6] > 0.5) {dribble();}
+  if(list[7] > 0.5) {resetGyro();}
+  if(list[7] > 0.5) {yawOffset = getYaw();}
   if(-list[3] > 0.05 && -list[3] < -0.05) {
     dribbleWithStick(-list[3]);
   }
@@ -190,14 +209,23 @@ void resetGyro() {
 
 void drive(float direction_deg, float speed, float rotation) {
     // Apply deadzone thresholds
-    if (speed <= 0.02) {
-        speed = 0;
+    if (speed <= 0.05) {
+      speed = 0;
     }
-    if (abs(rotation) <= 0.02) {
-        rotation = 0;
+    if (abs(rotation) <= 0.05) {
+      rotation = 0;
+    }
+    if (speed > 1.0) {
+      speed = 1.0;
+    }
+    
+    speed = speed*speed*speed;
+
+    if (speed > 1.0) {
+      speed = 1.0;
     }
 
-    rotation = rotation * 0.125; // Scale rotation for better control
+    rotation = rotation * 0.25; // Scale rotation for better control
 
     // Convert direction to radians
     float direction_rad = direction_deg * 3.14159265 / 180.0;
@@ -229,6 +257,18 @@ void drive(float direction_deg, float speed, float rotation) {
     SetSpeed(2, wheel_speeds[1] * 255);
     SetSpeed(3, wheel_speeds[3] * 255);
     SetSpeed(4, wheel_speeds[2] * 255);
+}
+
+void FieldRelativeDrive(float joystick_direction_deg, float speed, float rotation, float gyroangle_deg) {
+    // Adjust joystick direction based on current gyro angle
+    float field_direction = joystick_direction_deg + gyroangle_deg;
+
+    // Keep angle in [0, 360)
+    if (field_direction >= 360.0) {field_direction -= 360.0;}
+    if (field_direction < 0.0) {field_direction += 360.0;}
+
+    // Call your normal drive function
+    drive(field_direction, speed, rotation);
 }
 
 void SetSpeed(int Motor, int PWM) {
@@ -300,4 +340,73 @@ void SetSpeed(int Motor, int PWM) {
     }
     PWM4Value = PWM;
   }
+}
+
+bool setupBNO08x() {
+  if (!bno.begin_I2C()) {
+    Serial.println("Failed to find BNO08x chip");
+    return false;
+  }
+  Serial.println("BNO08x Found!");
+
+  // Enable rotation vector (quaternion-based orientation)
+  // SH2_ROTATION_VECTOR works for yaw/pitch/roll
+  if (!bno.enableReport(SH2_ROTATION_VECTOR, 20000)) { // 20000us = 50Hz
+    Serial.println("Could not enable rotation vector");
+    return false;
+  }
+  return true;
+}
+
+// Function to get yaw in degrees (adjusted with yawOffset)
+float getYaw() {
+  sh2_SensorValue_t sensorValue;
+  static float oldyaw;
+  
+  // Get rotation vector
+  if (bno.getSensorEvent(&sensorValue)) {
+    if (sensorValue.sensorId == SH2_ROTATION_VECTOR) {
+      // Extract quaternion
+      float q0 = sensorValue.un.rotationVector.real;
+      float q1 = sensorValue.un.rotationVector.i;
+      float q2 = sensorValue.un.rotationVector.j;
+      float q3 = sensorValue.un.rotationVector.k;
+
+      // Convert quaternion to yaw (Z axis rotation)
+      float yaw = atan2(2.0f * (q0 * q3 + q1 * q2),
+                        1.0f - 2.0f * (q2 * q2 + q3 * q3));
+
+      // Convert to degrees
+      yaw = yaw * 180.0f / PI;
+
+      // Apply offset and keep in range [-180, 180]
+      yaw -= yawOffset;
+      if (yaw > 180) yaw -= 360;
+      if (yaw < -180) yaw += 360;
+
+      oldyaw = yaw;
+      return yaw;
+    }
+  }
+  return oldyaw; // No update
+}
+
+void resetYaw() {
+  // sh2_SensorValue_t sensorValue;
+  
+  // // Get rotation vector
+  // if (bno.getSensorEvent(&sensorValue)) {
+  //   if (sensorValue.sensorId == SH2_ROTATION_VECTOR) {
+  //     float q0 = sensorValue.un.rotationVector.real;
+  //     float q1 = sensorValue.un.rotationVector.i;
+  //     float q2 = sensorValue.un.rotationVector.j;
+  //     float q3 = sensorValue.un.rotationVector.k;
+
+  //     float yaw = atan2(2.0f * (q0 * q3 + q1 * q2),
+  //                       1.0f - 2.0f * (q2 * q2 + q3 * q3));
+
+  //     yawOffset = yaw * 180.0f / PI;
+  //   }
+  // }
+  yawOffset = getYaw();
 }
