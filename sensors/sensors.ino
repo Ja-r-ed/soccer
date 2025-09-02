@@ -1,76 +1,61 @@
-#include <WiFi.h>
+#include <XboxSeriesXControllerESP32_asukiaaa.hpp>
 
-// Replace with your network credentials
-const char* ssid = "OPPO Find X5";
-const char* password = "8kswn2cn";
+XboxSeriesXControllerESP32_asukiaaa::Core xboxController;
 
-WiFiServer server(10000);  // server port to listen on
+// Joystick center and range
+const float joystickCenter = XboxControllerNotificationParser::maxJoy / 2.0;
+const float joystickRange = joystickCenter;  // = 32767.5
 
-// Define Serial1 pins (adjust as needed)
-#define SERIAL1_RX 16
-#define SERIAL1_TX 17
-#define LeftX 17
-#define LeftY 16
-#define RightX 4
+// Function prototype
+float convert(uint16_t raw);
 
 void setup() {
-  pinMode(LeftX, OUTPUT);
-  pinMode(LeftY, OUTPUT);
-  pinMode(RightX, OUTPUT);
+  pinMode(LeftX_PIN, OUTPUT);
+  pinMode(LeftY_PIN, OUTPUT);
+  pinMode(RightX_PIN, OUTPUT);
 
   Serial.begin(9600);
+  Serial.println("Starting Xbox controller connection...");
 
-  Serial.printf("Connecting to %s\n", ssid);
-  Serial.printf("\nattempting to connect to WiFi network SSID '%s' password '%s' \n", ssid, password);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print('.');
-    delay(500);
-  }
-  server.begin();
-  printWifiStatus();
-  Serial.println(" listening on port 10000");
+  xboxController.begin();  // Initialize BLE client
 }
-
-boolean alreadyConnected = false;
 
 void loop() {
-  static WiFiClient client;
-  if (!client)
-    client = server.available();
-  if (client) {
-    if (!alreadyConnected) {
-      client.flush();
-      Serial.println("We have a new client");
-      alreadyConnected = true;
-    }
-    int length;
-    float values[4];
-    if ((length = client.available()) >= sizeof(values)) {
-      size_t bytesRead = client.readBytes((char*)values, sizeof(values));
-      if (bytesRead == sizeof(values)) {
-        Serial.printf("%f, %f, %f, %f\n", values[0], values[1], values[2], values[3]);
-        analogWrite(LeftX, 100+(values[0]*100));
-        analogWrite(LeftY, 100-(values[1]*100));
-        analogWrite(RightX, 100+(values[2]*100));
-      } else {
-        Serial.println("Error: Did not read 16 bytes for 4 floats.");
-      }
-      while (client.available()) client.read();
-        } else if (length > 0) {
-      while (client.available()) client.read();
-    }
+  xboxController.onLoop();  // Must be called frequently
+
+  if (xboxController.isConnected()) {
+    float value[9] = {
+      convert(xboxController.xboxNotif.joyLHori),
+      convert(xboxController.xboxNotif.joyLVert),
+      convert(xboxController.xboxNotif.joyRHori),
+      convert(xboxController.xboxNotif.joyRVert),
+      (float)xboxController.xboxNotif.btnA,
+      (float)xboxController.xboxNotif.btnB,
+      (float)xboxController.xboxNotif.btnX,
+      (float)xboxController.xboxNotif.btnY,
+      (float)xboxController.battery
+    };
+
+    Serial.printf("%f, %f, %f, %f, %f, %f, %f, %f %f\n",
+                  value[0], value[1], value[2], value[3],
+                  value[4], value[5], value[6], value[7],
+                  value[8]);
+
+    // Example: use analogWrite here if you're controlling something
+    // analogWrite(LeftX_PIN, map(value[0], -1, 1, 0, 255));
+  } else {
+    Serial.println("Waiting for Xbox controller...");
+    delay(1000);
   }
 }
 
-void printWifiStatus() {
-  Serial.print("\nSSID: ");
-  Serial.println(WiFi.SSID());
-  IPAddress ip = WiFi.localIP();
-  Serial.print("IP Address: ");
-  Serial.println(ip);
-  long rssi = WiFi.RSSI();
-  Serial.print("signal strength (RSSI):");
-  Serial.print(rssi);
-  Serial.println(" dBm");
+float convertbooleanforjoystick(float value) {
+  if(value = -1) {return 0;}
+  if(value != -1) {return 1;}
+  else {return 3;}
+}
+
+// Convert joystick raw value (0–65535) to float in range -1.0 to 1.0
+float convert(uint16_t raw) {
+  return ((float)raw - joystickCenter) / joystickRange;
 }

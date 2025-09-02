@@ -15,6 +15,11 @@ int d1 = 22;
 int d2 = 23;
 int dena = 2;
 
+int LeftX = A0;
+int LeftY = A1;
+int RightX = A2;
+const unsigned long sampleDuration = 500; // Sampling time in milliseconds
+
 /*
 Front Left  (M1)
 Front Right (M2)
@@ -34,6 +39,10 @@ d1 = RED, 22
 d2 = BLACK, 23
 dena = BROWN, 13
 */
+int M1Target = 0;
+int M2Target = 0;
+int M3Target = 0;
+int M4Target = 0;
 
 // Buffer for incoming serial data
 float list[9];
@@ -50,6 +59,9 @@ void setup() {
   pinMode(d1, OUTPUT);
   pinMode(d2, OUTPUT);
   pinMode(dena, OUTPUT);
+  pinMode(LeftX, INPUT);
+  pinMode(LeftY, INPUT);
+  pinMode(RightX, INPUT);
   delay(100);
 
   Serial.begin(115200);    // Serial monitor (USB)
@@ -83,6 +95,16 @@ void loop()
         lastComma = i;
       }
     }
+
+    // Optional: Print parsed values
+    /*
+    Serial.print("Parsed values: ");
+    for (int i = 0; i < 9; i++) {
+      Serial.print(list[i], 3);
+      Serial.print(" ");
+    }
+    Serial.println();
+    */
   }
 
   Serial.print(getAngleDegrees(list[0], list[1]));
