@@ -1,8 +1,14 @@
 #include <Arduino.h>
 #include <Adafruit_BNO08x.h>
+#include <XboxSeriesXControllerESP32_asukiaaa.hpp>
 
+XboxSeriesXControllerESP32_asukiaaa::Core xboxController;
 Adafruit_BNO08x bno;
 float yawOffset;
+
+// Joystick center and range
+const float joystickCenter = XboxControllerNotificationParser::maxJoy / 2.0;
+const float joystickRange = joystickCenter;  // = 32767.5
 
 int M1a = 4;
 int M1b = 12;
@@ -45,12 +51,42 @@ void setup() {
   Serial1.begin(9600);     // Serial1 for communication with ESP32
 
   setupBNO08x(); // Initialize BNO08x sensor
+  xboxController.begin();  
 
   Serial.println("Setup complete");
 }
 
+float convert(uint16_t raw) {
+  return ((float)raw - joystickCenter) / joystickRange;
+}
+
 void loop()
 {
+  xboxController.onLoop(); 
+
+  if (xboxController.isConnected()) {
+    float value[9] = {
+      convert(xboxController.xboxNotif.joyLHori),
+      convert(xboxController.xboxNotif.joyLVert),
+      convert(xboxController.xboxNotif.joyRHori),
+      convert(xboxController.xboxNotif.joyRVert),
+      (float)xboxController.xboxNotif.btnA,
+      (float)xboxController.xboxNotif.btnB,
+      (float)xboxController.xboxNotif.btnX,
+      (float)xboxController.xboxNotif.btnY,
+      (float)xboxController.battery
+    };
+
+    drive(getAngleDegrees(value[0], value[1]), getDistance(value[0], value[1]), value[2]);
+
+    // Example: use analogWrite here if you're controlling something
+    // analogWrite(LeftX_PIN, map(value[0], -1, 1, 0, 255));
+  } else {
+    Serial.println("Waiting for Xbox controller...");
+    delay(1000);
+  }
+  
+
 
 }
 
@@ -80,55 +116,64 @@ void stopdribble() {
 }
 
 void drive(float direction_deg, float speed, float rotation) {
-    // Apply deadzone thresholds
-    if (speed <= 0.05) {
-      speed = 0;
+  // Apply deadzone thresholds
+  if (speed <= 0.05) {
+    speed = 0;
+  }
+  if (abs(rotation) <= 0.05) {
+    rotation = 0;
+  }
+  if (speed > 1.0) {
+    speed = 1.0;
+  }
+
+  // Remove cubic scaling
+  // speed = speed * speed * speed;
+
+  // Minimum PWM for movement
+  const float minPWM = 30.0;
+  const float maxPWM = 255.0;
+
+  // Scale speed to PWM range [minPWM, maxPWM]
+  float scaledPWM = 0;
+  if (speed > 0) {
+    scaledPWM = minPWM + (maxPWM - minPWM) * speed;
+  }
+
+  // Scale rotation for better control
+  rotation = rotation * 0.25;
+
+  // Convert direction to radians
+  float direction_rad = direction_deg * PI / 180.0;
+  float vx = speed * cos(direction_rad);
+  float vy = speed * sin(direction_rad);
+
+  // X-drive kinematics for 4 wheels: FL, FR, BR, BL
+  float wheel_speeds[4];
+  wheel_speeds[0] = vx * sin(45 * PI / 180.0) + vy * cos(45 * PI / 180.0) + rotation;
+  wheel_speeds[1] = vx * sin(-45 * PI / 180.0) + vy * cos(-45 * PI / 180.0) + rotation;
+  wheel_speeds[2] = vx * sin(-135 * PI / 180.0) + vy * cos(-135 * PI / 180.0) + rotation;
+  wheel_speeds[3] = vx * sin(135 * PI / 180.0) + vy * cos(135 * PI / 180.0) + rotation;
+
+  // Find max wheel speed for normalization
+  float max_speed = 0;
+  for (int i = 0; i < 4; i++) {
+    if (abs(wheel_speeds[i]) > max_speed) {
+      max_speed = abs(wheel_speeds[i]);
     }
-    if (abs(rotation) <= 0.05) {
-      rotation = 0;
-    }
-    if (speed > 1.0) {
-      speed = 1.0;
-    }
-    
-    speed = speed*speed*speed;
-
-    if (speed > 1.0) {
-      speed = 1.0;
-    }
-
-    rotation = rotation * 0.25; // Scale rotation for better control
-
-    // Convert direction to radians
-    float direction_rad = direction_deg * 3.14159265 / 180.0;
-    float vx = speed * cos(direction_rad);
-    float vy = speed * sin(direction_rad);
-
-    // X-drive kinematics for 4 wheels: FL, FR, BR, BL
-    float wheel_speeds[4];
-    wheel_speeds[0] = vx * sin(45 * 3.14159265 / 180.0) + vy * cos(45 * 3.14159265 / 180.0) + rotation;
-    wheel_speeds[1] = vx * sin(-45 * 3.14159265 / 180.0) + vy * cos(-45 * 3.14159265 / 180.0) + rotation;
-    wheel_speeds[2] = vx * sin(-135 * 3.14159265 / 180.0) + vy * cos(-135 * 3.14159265 / 180.0) + rotation;
-    wheel_speeds[3] = vx * sin(135 * 3.14159265 / 180.0) + vy * cos(135 * 3.14159265 / 180.0) + rotation;
-
-    // Normalize speeds if needed
-    float max_speed = 0;
+  }
+  // Normalize so the highest wheel gets full scaledPWM
+  if (max_speed > 1.0) {
     for (int i = 0; i < 4; i++) {
-        if (abs(wheel_speeds[i]) > max_speed) {
-            max_speed = abs(wheel_speeds[i]);
-        }
+      wheel_speeds[i] /= max_speed;
     }
-    if (max_speed > 1.0) {
-        for (int i = 0; i < 4; i++) {
-            wheel_speeds[i] /= max_speed;
-        }
-    }
+  }
 
-    // Apply motor speeds (mapped to range -255 to 255)
-    SetSpeed(3, wheel_speeds[0] * 255); //FL
-    SetSpeed(1, wheel_speeds[1] * 255); //FR
-    SetSpeed(2, wheel_speeds[3] * 255); //BL
-    SetSpeed(4, wheel_speeds[2] * 255); //BR
+  // Apply motor speeds (mapped to range -scaledPWM to scaledPWM)
+  SetSpeed(3, wheel_speeds[0] * scaledPWM); //FL
+  SetSpeed(1, wheel_speeds[1] * scaledPWM); //FR
+  SetSpeed(2, wheel_speeds[3] * scaledPWM); //BL
+  SetSpeed(4, wheel_speeds[2] * scaledPWM); //BR
 }
 
 void FieldRelativeDrive(float joystick_direction_deg, float speed, float rotation, float gyroangle_deg) {
