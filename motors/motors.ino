@@ -2,6 +2,14 @@
 #include <Adafruit_BNO08x.h>
 #include <XboxSeriesXControllerESP32_asukiaaa.hpp>
 
+struct Pose {
+  float x;
+  float y;
+  float theta; // or yaw, in degrees
+};
+
+Pose currentPosition = {0.0, 0.0, 0.0};
+
 XboxSeriesXControllerESP32_asukiaaa::Core xboxController;
 Adafruit_BNO08x bno;
 float yawOffset;
@@ -86,8 +94,63 @@ void loop()
     delay(1000);
   }
   
+  updateOdometry();
+  Serial.print(currentPosition.x);
+  Serial.print(" ");
+  Serial.print(currentPosition.y);
+  Serial.print(" ");
+  Serial.print(currentPosition.theta);
+  Serial.println(" ");
 
+}
 
+void updateOdometry() {
+  static float vx = 0, vy = 0; // velocity estimates (m/s)
+  static unsigned long lastTime = 0;
+  unsigned long now = millis();
+  float dt = (now - lastTime) / 1000.0; // seconds
+  if (dt <= 0 || dt > 1) dt = 0.02; // fallback for first run or large gaps
+  lastTime = now;
+
+  sh2_SensorValue_t sensorValue;
+  if (bno.getSensorEvent(&sensorValue)) {
+    if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
+      float ax = sensorValue.un.linearAcceleration.x;
+      float ay = sensorValue.un.linearAcceleration.y;
+
+      // Get current heading in radians
+      float theta_rad = currentPosition.theta * PI / 180.0;
+
+      // Rotate acceleration to field frame
+      float ax_field = ax * cos(theta_rad) - ay * sin(theta_rad);
+      float ay_field = ax * sin(theta_rad) + ay * cos(theta_rad);
+
+      // Integrate acceleration to velocity
+      vx += ax_field * dt;
+      vy += ay_field * dt;
+
+      // Optional: decay velocity when very small (helps with drift)
+      if (abs(ax_field) < 0.05) vx *= 0.98;
+      if (abs(ay_field) < 0.05) vy *= 0.98;
+
+      // Integrate velocity to position
+      currentPosition.x += vx * dt;
+      currentPosition.y += vy * dt;
+    }
+    if (sensorValue.sensorId == SH2_ROTATION_VECTOR) {
+      float q0 = sensorValue.un.rotationVector.real;
+      float q1 = sensorValue.un.rotationVector.i;
+      float q2 = sensorValue.un.rotationVector.j;
+      float q3 = sensorValue.un.rotationVector.k;
+      float yaw = atan2(2.0f * (q0 * q3 + q1 * q2),
+                        1.0f - 2.0f * (q2 * q2 + q3 * q3));
+      yaw = yaw * 180.0f / PI;
+      yaw -= yawOffset;
+      if (yaw > 180) yaw -= 360;
+      if (yaw < -180) yaw += 360;
+      currentPosition.theta = yaw;
+    }
+  }
 }
 
 float getAngleDegrees(float x, float y) {
@@ -118,7 +181,7 @@ void stopdribble() {
 void drive(float direction_deg, float speed, float rotation) {
   // Apply deadzone thresholds
   if (speed <= 0.05) {
-    speed = 0;
+    speed = 0.05;
   }
   if (abs(rotation) <= 0.05) {
     rotation = 0;
@@ -140,8 +203,10 @@ void drive(float direction_deg, float speed, float rotation) {
     scaledPWM = minPWM + (maxPWM - minPWM) * speed;
   }
 
+
+
   // Scale rotation for better control
-  rotation = rotation * 0.25;
+  // rotation = rotation * 0.25;
 
   // Convert direction to radians
   float direction_rad = direction_deg * PI / 180.0;
@@ -215,6 +280,11 @@ bool setupBNO08x() {
     return false;
   }
   Serial.println("BNO08x Found!");
+
+  if (!bno.enableReport(SH2_LINEAR_ACCELERATION, 20000)) { // 20000us = 50Hz
+    Serial.println("Could not enable linear acceleration");
+    return false;
+  }
 
   // Enable rotation vector (quaternion-based orientation)
   // SH2_ROTATION_VECTOR works for yaw/pitch/roll
