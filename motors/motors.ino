@@ -92,8 +92,8 @@ PID translationPID;
 
 // Motion profile limits
 float maxTranslationSpeed = 1;  // normalized (0–1)
-float maxRotationSpeed = 0.5;     // normalized (-1–1)
-float accelRate = 0.0001;           // per loop (~50Hz)
+float maxRotationSpeed = 1;     // normalized (-1–1)
+float accelRate = 0.01;           // per loop (~50Hz)
 float currentTranslationCmd = 0;
 float currentRotationCmd = 0;
 
@@ -122,7 +122,7 @@ void setup() {
 
   // Init PID controllers
   rotationPID.init(0.02, 0.0, 0.001, -maxRotationSpeed, maxRotationSpeed);
-  translationPID.init(0.1, 0.0, 0.01, -maxTranslationSpeed, maxTranslationSpeed);
+  translationPID.init(0.3, 0.0, 0.01, -maxTranslationSpeed, maxTranslationSpeed);
 
   Serial.println("Setup complete");
 }
@@ -204,12 +204,19 @@ void goToBall() {
   float rotationCmd = rotationPID.compute(targetAngle, ballAngle, dt, true);
   float translationCmd = translationPID.compute(targetDistance, dist, dt);
 
-  // Apply trapezoidal ramp
-  currentRotationCmd = applyMotionProfile(rotationCmd, currentRotationCmd);
-  currentTranslationCmd = applyMotionProfile(translationCmd, currentTranslationCmd);
+  Serial.print("rotationCmd: ");
+  Serial.print(rotationCmd);
+  Serial.print("translationCmd: ");
+  Serial.print(translationCmd);
 
-  // --- Drive ---
-  drive(0, fabs(currentTranslationCmd), -currentRotationCmd);
+  // Apply trapezoidal ramp
+  // currentRotationCmd = applyMotionProfile(rotationCmd, currentRotationCmd);
+  // currentTranslationCmd = applyMotionProfile(translationCmd, currentTranslationCmd);
+
+  // // --- Drive ---
+  // drive(0, fabs(currentTranslationCmd), currentRotationCmd);
+
+  drive(0, fabs(translationCmd), rotationCmd);
 
   if(ballDistance == 0.0 && ballAngle == 0.0) {
     drive(0,0,0);
@@ -297,7 +304,7 @@ void drive(float direction_deg, float speed, float rotation) {
     speed = 1.0;
   }
 
-  const float minPWM = 30.0;
+  const float minPWM = 40.0;
   const float maxPWM = 255.0;
 
   float scaledPWM = 0;
