@@ -48,6 +48,8 @@ void loop() {
             }
         }
     }
+    Serial.write((uint8_t*)lastLineBuf, 32);
+    Serial.println();
 }
 
 // Interrupt-safe I2C response

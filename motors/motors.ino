@@ -122,7 +122,7 @@ void setup() {
 
   // Init PID controllers
   rotationPID.init(0.02, 0.0, 0.001, -maxRotationSpeed, maxRotationSpeed);
-  translationPID.init(0.3, 0.0, 0.01, -maxTranslationSpeed, maxTranslationSpeed);
+  translationPID.init(0.05, 0.0, 0.01, -maxTranslationSpeed, maxTranslationSpeed);
 
   Serial.println("Setup complete");
 }
@@ -207,7 +207,7 @@ void goToBall() {
   Serial.print("rotationCmd: ");
   Serial.print(rotationCmd);
   Serial.print("translationCmd: ");
-  Serial.print(translationCmd);
+  Serial.println(translationCmd);
 
   // Apply trapezoidal ramp
   // currentRotationCmd = applyMotionProfile(rotationCmd, currentRotationCmd);
@@ -216,7 +216,7 @@ void goToBall() {
   // // --- Drive ---
   // drive(0, fabs(currentTranslationCmd), currentRotationCmd);
 
-  drive(0, fabs(translationCmd), rotationCmd);
+  drive(0, -translationCmd, rotationCmd);
 
   if(ballDistance == 0.0 && ballAngle == 0.0) {
     drive(0,0,0);
