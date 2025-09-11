@@ -44,10 +44,10 @@ int M2Target = 0;
 int M3Target = 0;
 int M4Target = 0;
 
-float ballDistance;
-float ballAngle;
-float goalAngle;
-float goalDistance;
+float ballX;
+float ballY;
+float goalX;
+float goalY;
 
 // PID controller struct
 struct PID {
@@ -91,8 +91,8 @@ PID rotationPID;
 PID translationPID;
 
 // Motion profile limits
-float maxTranslationSpeed = 1;  // normalized (0–1)
-float maxRotationSpeed = 1;     // normalized (-1–1)
+float maxTranslationSpeed = 0.8;  // normalized (0–1)
+float maxRotationSpeed = 0.3;     // normalized (-1–1)
 float accelRate = 0.01;           // per loop (~50Hz)
 float currentTranslationCmd = 0;
 float currentRotationCmd = 0;
@@ -121,8 +121,8 @@ void setup() {
   Serial.println("I2C Master ready");
 
   // Init PID controllers
-  rotationPID.init(0.02, 0.0, 0.001, -maxRotationSpeed, maxRotationSpeed);
-  translationPID.init(0.05, 0.0, 0.01, -maxTranslationSpeed, maxTranslationSpeed);
+  rotationPID.init(0.003, 0.0, 0.001, -maxRotationSpeed, maxRotationSpeed);
+  translationPID.init(0.007, 0.0, 0.01, -maxTranslationSpeed, maxTranslationSpeed);
 
   Serial.println("Setup complete");
 }
@@ -143,47 +143,48 @@ float applyMotionProfile(float target, float current) {
 }
 
 void loop() {
-    const int BUF_SIZE = 32;
-    char buf[BUF_SIZE + 1]; // +1 for null terminator
-
-    // Request exactly 32 bytes
-    int bytesReceived = Wire.requestFrom(SLAVE_ADDR, BUF_SIZE);
-    if (bytesReceived != BUF_SIZE) {
-        // Slave didn’t respond fully; skip this loop
-        Serial.println("I2C: incomplete read");
-        delay(5);
-        return;
-    }
-
-    // Read all 32 bytes into buf
-    for (int i = 0; i < BUF_SIZE; i++) {
-        buf[i] = Wire.read();
-    }
-    buf[BUF_SIZE] = '\0'; // null-terminate
-
-    // Remove trailing spaces
-    int len = BUF_SIZE;
-    while (len > 0 && buf[len - 1] == ' ') buf[--len] = '\0';
-
-    // Parse 4 floats
-    float f1, f2, f3, f4;
-    if (sscanf(buf, "%f %f %f %f", &f1, &f2, &f3, &f4) == 4) {
-        ballDistance = f1;
-        ballAngle    = f2;
-        goalAngle    = f3;
-        goalDistance = f4;
-    } else {
-        // parsing failed
-        ballDistance = ballAngle = goalAngle = goalDistance = 0;
-    }
-    Serial.print(ballDistance);
-    Serial.print(" ");
-    Serial.println(ballAngle);
-
-    // Run robot logic
-    goToBall();
+  goToBallXY();
+  recieveInfo();
 }
 
+void recieveInfo() {
+  const int BUF_SIZE = 32;
+  char buf[BUF_SIZE + 1]; // +1 for null terminator
+
+  // Request exactly 32 bytes
+  int bytesReceived = Wire.requestFrom(SLAVE_ADDR, BUF_SIZE);
+  if (bytesReceived != BUF_SIZE) {
+      // Slave didn’t respond fully; skip this loop
+      Serial.println("I2C: incomplete read");
+      delay(5);
+      return;
+  }
+
+  // Read all 32 bytes into buf
+  for (int i = 0; i < BUF_SIZE; i++) {
+      buf[i] = Wire.read();
+  }
+  buf[BUF_SIZE] = '\0'; // null-terminate
+
+  // Remove trailing spaces
+  int len = BUF_SIZE;
+  while (len > 0 && buf[len - 1] == ' ') buf[--len] = '\0';
+
+  // Parse 4 floats
+  float f1, f2, f3, f4;
+  if (sscanf(buf, "%f %f %f %f", &f1, &f2, &f3, &f4) == 4) {
+      ballX = f1;
+      ballY = f2;
+      goalX = f3;
+      goalY = f4;
+  } else {
+      // parsing failed
+      ballX = ballY = goalX = goalY = 0;
+  }
+  Serial.print(ballX);
+  Serial.print(" ");
+  Serial.println(ballY);
+}
 
 void goToBall() {
   static unsigned long lastTime = millis();
@@ -197,11 +198,11 @@ void goToBall() {
   float targetAngle = 209.3;
 
   // --- Current readings ---
-  float dist = ballDistance;
+  float dist = ballX;
   float yaw  = getYaw();
 
   // --- PID Outputs ---
-  float rotationCmd = rotationPID.compute(targetAngle, ballAngle, dt, true);
+  float rotationCmd = rotationPID.compute(targetAngle, ballY, dt, true);
   float translationCmd = translationPID.compute(targetDistance, dist, dt);
 
   Serial.print("rotationCmd: ");
@@ -218,7 +219,52 @@ void goToBall() {
 
   drive(0, -translationCmd, rotationCmd);
 
-  if(ballDistance == 0.0 && ballAngle == 0.0) {
+  if(ballX == 0.0 && ballY == 0.0) {
+    drive(0,0,0);
+    // Serial.println("drive getting 0,0");
+  }
+}
+
+void goToBallXY() {
+  static unsigned long lastTime = millis();
+  unsigned long now = millis();
+  float dt = (now - lastTime) / 1000.0;
+  if (dt <= 0 || dt > 1) dt = 0.02;
+  lastTime = now;
+
+  // --- Targets ---
+  float targetX = 160;
+  float targetY = 170;
+
+  // --- Current readings ---
+  float yaw  = getYaw();
+
+  // --- PID Outputs ---
+  float rotationCmd = rotationPID.compute(targetX, ballX, dt, true);
+  float translationCmd = translationPID.compute(targetY, ballY, dt);
+
+  Serial.print("rotationCmd: ");
+  Serial.print(rotationCmd);
+  Serial.print("translationCmd: ");
+  Serial.println(translationCmd);
+
+  // Apply trapezoidal ramp
+  // currentRotationCmd = applyMotionProfile(rotationCmd, currentRotationCmd);
+  // currentTranslationCmd = applyMotionProfile(translationCmd, currentTranslationCmd);
+
+  // // --- Drive ---
+  // drive(0, fabs(currentTranslationCmd), currentRotationCmd);
+  float direction;
+  if(rotationCmd < 0) {
+    direction = 360+rotationCmd*5;
+  }
+  if(rotationCmd > 0) {
+    direction = rotationCmd*5;
+  }
+
+  drive(direction, translationCmd, rotationCmd);
+
+  if(ballX == 0.0 && ballY == 0.0) {
     drive(0,0,0);
     // Serial.println("drive getting 0,0");
   }
@@ -304,7 +350,7 @@ void drive(float direction_deg, float speed, float rotation) {
     speed = 1.0;
   }
 
-  const float minPWM = 40.0;
+  const float minPWM = 60.0;
   const float maxPWM = 255.0;
 
   float scaledPWM = 0;
