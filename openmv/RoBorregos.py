@@ -9,11 +9,14 @@ from machine import UART
 # --- UART CONFIG FOR RT1062 ---
 # id = 3 means UART3 (same as pyb.UART(3,...))
 # Adjust tx/rx pins if necessary, default pins work on OpenMV RT1062
-uart = UART(3, baudrate=115200, timeout_char=0)
+uart = UART(1, baudrate=115200, timeout_char=0)
 
-thresholds_blob1 = (16, 100, 12, 127, -11, 127)
-thresholds_blob2 = (53, 89, 7, 60, 16, 89)
-thresholds_azul = (8, 36, -3, 14, -23, -5)
+# Thresholds_ball = (16, 100, 12, 127, -11, 127)
+Thresholds_ball = (27, 42, 53, 127, 41, 56)
+thresholds_yellow_goal = (0,0,0,0,0,0)
+tresholds_blue_goal = (0,0,0,0,0,0)
+# thresholds_yellow_goal = (53, 89, 7, 60, 16, 89)
+# tresholds_blue_goal = (8, 36, -3, 14, -23, -5)
 thresholds_line = (86, 100, -128, 127, -128, 127)
 
 FRAME_HEIGHT = 160 * 2
@@ -51,9 +54,9 @@ def initialize_sensor():
 
 
 def locate_blob(img):
-    blobs1 = img.find_blobs([thresholds_blob1], area_threshold=1, merge=True)
-    blobs2 = img.find_blobs([thresholds_blob2], area_threshold=1000, merge=True)
-    blobAzul = img.find_blobs([thresholds_azul], area_threshold=1000, merge=True)
+    blobs1 = img.find_blobs([Thresholds_ball], area_threshold=1, merge=True)
+    blobs2 = img.find_blobs([thresholds_yellow_goal], area_threshold=1000, merge=True)
+    blobAzul = img.find_blobs([tresholds_blue_goal], area_threshold=1000, merge=True)
 
     for blob in blobs1:
         img.draw_rectangle(blob.rect(), color=(0, 255, 0))
@@ -119,15 +122,16 @@ def main():
 
         clock.tick()
         img = sensor.snapshot()
-        blobs1, blobs2, blobAzul = locate_blob(img)
+        ball, blobs2, blobAzul = locate_blob(img)
 
-        if blobs1:
-            for blob in blobs1:
+        if ball:
+            for blob in ball:
                 distance_ball = calculate_distance(blob)
                 angle_ball = calculate_angle(blob)
 
         if blobs2:
             for blob in blobs2:
+                distance_pixels = calculate_distance_goal(blob)
                 angle_goal = calculate_angle(blob)
 
         if blobAzul:
