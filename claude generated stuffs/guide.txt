@@ -1,0 +1,296 @@
+# RoboCup Junior Robot Setup and Calibration Guide
+
+## Hardware Requirements
+
+### Core Components
+- **OpenMV RT1062** (main controller with camera)
+- **2x ESP32 DevKit** (sensor processing and motor control)
+- **Adafruit 9-DOF IMU** (LSM6DSOX + LIS3MDL)
+- **2x VL53L0X ToF sensors**
+- **H-bridge motor driver** (e.g., L298N or similar)
+- **2x DC motors** with encoders (optional but recommended)
+- **Servo motor** for kicker mechanism
+
+### Wiring Connections
+
+#### OpenMV RT1062
+```
+I2C (IMU):
+- P4 (SCL) → IMU SCL
+- P5 (SDA) → IMU SDA
+- 3.3V → IMU VCC
+- GND → IMU GND
+
+UART (ESP32 Communication):
+- P0 (TX) → ESP32-1 RX (GPIO16)
+- P1 (RX) → ESP32-1 TX (GPIO17)
+- P7 (TX) → ESP32-2 RX (GPIO16)
+- P8 (RX) → ESP32-2 TX (GPIO17)
+```
+
+#### ESP32-1 (ToF Sensors)
+```
+I2C (ToF Sensors):
+- GPIO21 (SDA) → Both sensors SDA
+- GPIO22 (SCL) → Both sensors SCL
+
+XSHUT Control:
+- GPIO4 → Sensor1 XSHUT
+- GPIO5 → Sensor2 XSHUT
+
+Power:
+- 3.3V → Both sensors VCC
+- GND → Both sensors GND
+```
+
+#### ESP32-2 (Motor Control)
+```
+Motor Driver:
+- GPIO18 → Motor Left PWM
+- GPIO19 → Motor Left DIR1
+- GPIO21 → Motor Left DIR2
+- GPIO22 → Motor Right PWM
+- GPIO23 → Motor Right DIR1
+- GPIO25 → Motor Right DIR2
+
+Servo:
+- GPIO26 → Servo signal
+- 5V → Servo VCC (through motor driver if available)
+- GND → Servo GND
+```
+
+## Software Setup
+
+### 1. OpenMV IDE Setup
+1. Install OpenMV IDE from https://openmv.io/pages/download
+2. Connect OpenMV RT1062 via USB
+3. Upload the main EKF localization code
+4. Ensure camera is properly connected and functioning
+
+### 2. ESP32 Arduino IDE Setup
+1. Install ESP32 board package in Arduino IDE
+2. Install required libraries:
+   ```
+   - VL53L0X by Adafruit
+   - ESP32Servo
+   ```
+3. Upload ToF sensor code to first ESP32
+4. Upload motor control code to second ESP32
+
+### 3. IMU Setup
+The Adafruit 9-DOF IMU typically uses:
+- **LSM6DSOX** for accelerometer and gyroscope
+- **LIS3MDL** for magnetometer (optional for basic localization)
+
+Default I2C addresses:
+- LSM6DSOX: 0x6A (if SDO/SA0 is low) or 0x6B (if high)
+- LIS3MDL: 0x1C (if SDO/SA1 is low) or 0x1E (if high)
+
+## Calibration Procedures
+
+### 1. Camera Calibration
+
+#### Goal Detection Tuning
+```python
+# In OpenMV code, adjust these values for your field conditions:
+goal_thresholds = [(0, 100, -128, 127, -128, 127)]  # Blue goal LAB values
+
+# Steps to calibrate:
+# 1. Place robot facing blue goal at various distances
+# 2. Use Tools > Machine Vision > Threshold Editor in OpenMV IDE
+# 3. Adjust LAB values until goal is consistently detected
+# 4. Test under different lighting conditions
+```
+
+#### Perspective Transformation
+```python
+# Calibrate pixel-to-field coordinate conversion:
+# 1. Place objects at known field positions
+# 2. Measure pixel coordinates in camera image
+# 3. Adjust these scaling factors:
+field_x = pixel_x * SCALE_FACTOR_X  # Start with 0.5, adjust based on testing
+field_y = DISTANCE_OFFSET + pixel_y * SCALE_FACTOR_Y  # Start with 0.3
+```
+
+### 2. IMU Calibration
+
+#### Gyroscope Bias Calibration
+```python
+# Add this to your OpenMV code for initial calibration:
+def calibrate_gyro(samples=1000):
+    bias_x, bias_y, bias_z = 0, 0, 0
+    
+    for i in range(samples):
+        gx, gy, gz = read_raw_gyro()  # Implement this function
+        bias_x += gx
+        bias_y += gy
+        bias_z += gz
+        time.sleep_ms(10)
+    
+    bias_x /= samples
+    bias_y /= samples
+    bias_z /= samples
+    
+    print(f"Gyro bias: X={bias_x:.3f}, Y={bias_y:.3f}, Z={bias_z:.3f}")
+    return bias_x, bias_y, bias_z
+
+# Run this with robot stationary, then subtract bias from readings
+```
+
+#### Accelerometer Calibration
+```python
+# For basic calibration, ensure accelerometer reads ~9.8 m/s² when stationary
+# More advanced: perform 6-point calibration (face each axis up/down)
+```
+
+### 3. ToF Sensor Calibration
+
+#### Range and Accuracy Testing
+```cpp
+// Add to ESP32 ToF code:
+void calibrateToF() {
+    Serial.println("ToF Calibration - place robot at known distances from wall");
+    
+    for (int distance = 10; distance <= 100; distance += 10) {
+        Serial.printf("Place robot %d cm from wall, press any key...", distance);
+        while (!Serial.available()) delay(100);
+        Serial.read();
+        
+        float sum1 = 0, sum2 = 0;
+        int samples = 50;
+        
+        for (int i = 0; i < samples; i++) {
+            uint16_t range1 = sensor1.readRangeSingleMillimeters();
+            uint16_t range2 = sensor2.readRangeSingleMillimeters();
+            sum1 += range1 / 10.0;  // Convert to cm
+            sum2 += range2 / 10.0;
+            delay(100);
+        }
+        
+        Serial.printf("Expected: %d cm, Sensor1: %.1f cm, Sensor2: %.1f cm\n", 
+                     distance, sum1/samples, sum2/samples);
+    }
+}
+```
+
+### 4. Motor Calibration
+
+#### Speed and Direction Testing
+```cpp
+// Add to ESP32 motor control code:
+void calibrateMotors() {
+    // Test forward motion
+    Serial.println("Testing forward motion for 2 seconds...");
+    setMotorSpeed(150, 150);
+    delay(2000);
+    setMotorSpeed(0, 0);
+    
+    // Test turning
+    Serial.println("Testing left turn for 2 seconds...");
+    setMotorSpeed(-100, 100);
+    delay(2000);
+    setMotorSpeed(0, 0);
+    
+    // Measure and adjust for straight-line motion
+    Serial.println("Adjust motor speeds if robot doesn't move straight");
+}
+```
+
+### 5. EKF Parameter Tuning
+
+#### Process Noise (Q Matrix)
+```python
+# Start with these values and adjust based on performance:
+self.Q[0][0] = 0.1  # Position X variance
+self.Q[1][1] = 0.1  # Position Y variance  
+self.Q[2][2] = 0.05 # Orientation variance (lower = more trust in gyro)
+self.Q[3][3] = 0.2  # Velocity X variance
+self.Q[4][4] = 0.2  # Velocity Y variance
+
+# If robot position jumps too much: decrease Q values
+# If robot position is too slow to respond: increase Q values
+```
+
+#### Measurement Noise (R Matrix)
+```python
+# ToF sensor noise (distance measurement)
+R_tof = 4.0  # Increase if ToF readings are noisy
+
+# Vision noise (pixel to world coordinate uncertainty)
+R_vision = [[9.0, 0], [0, 9.0]]  # Increase if vision detection is unreliable
+```
+
+## Testing Procedures
+
+### 1. Static Testing
+1. **IMU Static Test**: Robot stationary, verify gyro reads ~0, accel reads gravity
+2. **ToF Static Test**: Known distances, verify sensor accuracy
+3. **Vision Static Test**: Known landmark positions, verify detection
+
+### 2. Motion Testing
+1. **Straight Line**: Drive robot straight, check if EKF position tracks correctly
+2. **Rotation**: Rotate robot in place, verify orientation tracking
+3. **Combined Motion**: Drive in squares/circles, check position accuracy
+
+### 3. Field Testing
+1. **Boundary Detection**: Use ToF sensors to detect field edges
+2. **Goal Detection**: Test vision system under field lighting
+3. **Full Localization**: Place robot at known positions, verify EKF estimates
+
+## Troubleshooting
+
+### Common Issues
+
+#### EKF Divergence
+- **Symptoms**: Position estimates grow unrealistically large
+- **Solutions**: 
+  - Reduce process noise (Q matrix values)
+  - Check sensor calibration
+  - Verify coordinate system consistency
+
+#### Poor Vision Detection
+- **Symptoms**: Goals not detected consistently
+- **Solutions**:
+  - Recalibrate color thresholds
+  - Improve lighting conditions
+  - Add more robust blob filtering
+
+#### ToF Sensor Interference
+- **Symptoms**: Sensors interfere with each other
+- **Solutions**:
+  - Increase physical separation
+  - Use different timing for measurements
+  - Shield sensors from cross-talk
+
+#### Motor Control Issues
+- **Symptoms**: Robot doesn't move straight or turn correctly
+- **Solutions**:
+  - Calibrate motor speeds individually
+  - Check wheel alignment
+  - Verify H-bridge connections
+
+### Performance Optimization
+
+1. **Increase Update Rate**: Target 20-50Hz for main control loop
+2. **Reduce Computation**: Simplify matrix operations if needed
+3. **Sensor Fusion Priority**: Weight more reliable sensors higher
+4. **Field Constraints**: Use field boundaries to bound position estimates
+
+## Field-Specific Adaptations
+
+### RoboCup Junior Soccer Field
+- **Dimensions**: 122cm × 183cm
+- **Goals**: Blue and yellow, specific LAB color ranges
+- **Lines**: White lines on green carpet
+- **Lighting**: May vary between competitions
+
+### Coordinate System
+```
+Field Coordinate System (recommended):
+- Origin: Center of field
+- X-axis: Toward opponent goal (positive)  
+- Y-axis: Toward left side of field (positive)
+- Angles: 0° = facing opponent goal, positive = counterclockwise
+```
+
+This setup provides a robust foundation for RoboCup Junior robot localization using sensor fusion with an Extended Kalman Filter.
