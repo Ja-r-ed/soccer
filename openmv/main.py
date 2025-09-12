@@ -9,11 +9,26 @@ uart = UART(1, baudrate=115200, timeout_char=0)
 
 # COLOR THRESHOLDS
 Thresholds_ball = (27, 42, 53, 127, 41, 56)
-thresholds_yellow_goal = (0, 0, 0, 0, 0, 0)
-thresholds_blue_goal = (0, 0, 0, 0, 0, 0)
+thresholds_yellow_goal = (6, 58, 14, 53, 11, 69)
+thresholds_blue_goal = (18, 40, 41, 66, -96, -61)
+
+loop = 0
+cycle = 0
 
 # CAMERA SETTINGS
 def initialize_sensor():
+    # sensor.reset()
+    # sensor.set_pixformat(sensor.RGB565)
+    # sensor.set_framesize(sensor.QVGA)
+    # sensor.set_vflip(False)
+    # sensor.set_hmirror(True)
+    # sensor.skip_frames(time=100)
+    # sensor.set_brightness(-3)
+    # sensor.set_contrast(-2)
+    # sensor.set_saturation(-3)
+    # sensor.set_auto_gain(False)
+    # sensor.set_auto_whitebal(False)
+
     sensor.reset()
     sensor.set_pixformat(sensor.RGB565)
     sensor.set_framesize(sensor.QVGA)
@@ -38,6 +53,8 @@ def locate_biggest_blob(img, thresholds, area_thresh=1):
     return None
 
 def main():
+    global loop
+    global cycle
     initialize_sensor()
     clock = time.clock()
 
@@ -81,8 +98,28 @@ def main():
             print("sent: {:.2f} {:.2f} {:.2f} {:.2f}".format(
                 ballx, bally,
                 goalx, goaly
-            )
-            )
+            ))
+        if not ball_blob or not goal_blob:
+            uart.write("{:.2f} {:.2f} {:.2f} {:.2f}\n".format(
+                0, 0,
+                0, 0
+            ))
+            print("sent: {:.2f} {:.2f} {:.2f} {:.2f}".format(
+                0, 0,
+                0, 0
+            ))
+
+        # cycle += 1
+        # loop += 1
+        # if loop == 50:
+        #     try:
+        #         img.save("frame_%d.jpg" % cycle)
+        #         print("frame_%d.jpg" % cycle)
+        #     except:
+        #         print("Error saving image")
+
+        #     loop = 0
+
 
 if __name__ == "__main__":
     main()

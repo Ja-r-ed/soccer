@@ -262,7 +262,7 @@ void goToBallXY() {
     direction = rotationCmd*5;
   }
 
-  drive(direction, translationCmd, rotationCmd);
+  drive(0, translationCmd, rotationCmd);
 
   if(ballX == 0.0 && ballY == 0.0) {
     drive(0,0,0);
