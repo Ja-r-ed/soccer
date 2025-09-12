@@ -359,8 +359,8 @@ void drive(float direction_deg, float speed, float rotation) {
   }
 
   float direction_rad = direction_deg * PI / 180.0;
-  float vx = speed * cos(direction_rad);
-  float vy = speed * sin(direction_rad);
+  float vx = cos(direction_rad);
+  float vy = sin(direction_rad);
 
   float wheel_speeds[4];
   wheel_speeds[0] = vx * sin(45 * PI / 180.0) + vy * cos(45 * PI / 180.0) + rotation;
