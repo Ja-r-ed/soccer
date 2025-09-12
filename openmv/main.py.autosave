@@ -109,16 +109,16 @@ def main():
                 0, 0
             ))
 
-        cycle += 1
-        loop += 1
-        if loop == 50:
-            try:
-                img.save("frame_%d.jpg" % cycle)
-                print("frame_%d.jpg" % cycle)
-            except:
-                print("Error saving image")
+        # cycle += 1
+        # loop += 1
+        # if loop == 50:
+        #     try:
+        #         img.save("frame_%d.jpg" % cycle)
+        #         print("frame_%d.jpg" % cycle)
+        #     except:
+        #         print("Error saving image")
 
-            loop = 0
+        #     loop = 0
 
 
 if __name__ == "__main__":

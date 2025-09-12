@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <Adafruit_BNO08x.h>
-#include <XboxSeriesXControllerESP32_asukiaaa.hpp>
 #include <Wire.h>
 #define SLAVE_ADDR 0x42
 
@@ -18,13 +17,8 @@ String lastLine;
 
 Pose currentPosition = {0.0, 0.0, 0.0};
 
-XboxSeriesXControllerESP32_asukiaaa::Core xboxController;
 Adafruit_BNO08x bno;
 float yawOffset;
-
-// Joystick center and range
-const float joystickCenter = XboxControllerNotificationParser::maxJoy / 2.0;
-const float joystickRange = joystickCenter;  // = 32767.5
 
 int M1a = 4;
 int M1b = 12;
@@ -115,7 +109,6 @@ void setup() {
   Serial1.begin(9600);     // Serial1 for communication with ESP32
 
   setupBNO08x(); // Initialize BNO08x sensor
-  xboxController.begin();  
 
   Wire.begin(21, 22); // SDA, SCL
   Serial.println("I2C Master ready");
@@ -125,10 +118,6 @@ void setup() {
   translationPID.init(0.007, 0.0, 0.01, -maxTranslationSpeed, maxTranslationSpeed);
 
   Serial.println("Setup complete");
-}
-
-float convert(uint16_t raw) {
-  return ((float)raw - joystickCenter) / joystickRange;
 }
 
 float applyMotionProfile(float target, float current) {
@@ -243,7 +232,7 @@ void goToBallXY() {
   float rotationCmd = rotationPID.compute(targetX, ballX, dt, true);
   float translationCmd = translationPID.compute(targetY, ballY, dt);
 
-  Serial.print("rotationCmd: ");
+  Serial.print("                             rotationCmd: ");
   Serial.print(rotationCmd);
   Serial.print("translationCmd: ");
   Serial.println(translationCmd);
