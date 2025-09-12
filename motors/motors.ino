@@ -7,7 +7,7 @@
 struct Pose {
   float x;
   float y;
-  float theta; // or yaw, in degrees
+  float theta;  // or yaw, in degrees
 };
 
 // Buffer for assembling UART input
@@ -16,7 +16,7 @@ String espBuffer = "";
 // Latest formatted line from OpenMV
 String lastLine;
 
-Pose currentPosition = {0.0, 0.0, 0.0};
+Pose currentPosition = { 0.0, 0.0, 0.0 };
 
 XboxSeriesXControllerESP32_asukiaaa::Core xboxController;
 Adafruit_BNO08x bno;
@@ -49,6 +49,8 @@ float ballY;
 float goalX;
 float goalY;
 
+int loopNumber = 0;
+
 // PID controller struct
 struct PID {
   float kP, kI, kD;
@@ -57,7 +59,9 @@ struct PID {
   float outputMin, outputMax;
 
   void init(float p, float i, float d, float outMin, float outMax) {
-    kP = p; kI = i; kD = d;
+    kP = p;
+    kI = i;
+    kD = d;
     integral = 0;
     lastError = 0;
     outputMin = outMin;
@@ -91,9 +95,9 @@ PID rotationPID;
 PID translationPID;
 
 // Motion profile limits
-float maxTranslationSpeed = 0.8;  // normalized (0–1)
-float maxRotationSpeed = 0.3;     // normalized (-1–1)
-float accelRate = 0.01;           // per loop (~50Hz)
+float maxTranslationSpeed = 1;  // normalized (0–1)
+float maxRotationSpeed = 0.3;   // normalized (-1–1)
+float accelRate = 0.01;         // per loop (~50Hz)
 float currentTranslationCmd = 0;
 float currentRotationCmd = 0;
 
@@ -111,18 +115,18 @@ void setup() {
   pinMode(dena, OUTPUT);
   delay(100);
 
-  Serial.begin(115200);    // Serial monitor (USB)
-  Serial1.begin(9600);     // Serial1 for communication with ESP32
+  Serial.begin(115200);  // Serial monitor (USB)
+  Serial1.begin(9600);   // Serial1 for communication with ESP32
 
-  setupBNO08x(); // Initialize BNO08x sensor
-  xboxController.begin();  
+  setupBNO08x();  // Initialize BNO08x sensor
+  xboxController.begin();
 
-  Wire.begin(21, 22); // SDA, SCL
+  Wire.begin(21, 22);  // SDA, SCL
   Serial.println("I2C Master ready");
 
   // Init PID controllers
-  rotationPID.init(0.003, 0.0, 0.001, -maxRotationSpeed, maxRotationSpeed);
-  translationPID.init(0.007, 0.0, 0.01, -maxTranslationSpeed, maxTranslationSpeed);
+  rotationPID.init(0.0001, 0.0, 0.001, -maxRotationSpeed, maxRotationSpeed);
+  translationPID.init(0.005, 0.0, 0.01, -maxTranslationSpeed, maxTranslationSpeed);
 
   Serial.println("Setup complete");
 }
@@ -142,29 +146,24 @@ float applyMotionProfile(float target, float current) {
   return current;
 }
 
-void loop() {
-  goToBallXY();
-  recieveInfo();
-}
-
 void recieveInfo() {
   const int BUF_SIZE = 32;
-  char buf[BUF_SIZE + 1]; // +1 for null terminator
+  char buf[BUF_SIZE + 1];  // +1 for null terminator
 
   // Request exactly 32 bytes
   int bytesReceived = Wire.requestFrom(SLAVE_ADDR, BUF_SIZE);
   if (bytesReceived != BUF_SIZE) {
-      // Slave didn’t respond fully; skip this loop
-      Serial.println("I2C: incomplete read");
-      delay(5);
-      return;
+    // Slave didn’t respond fully; skip this loop
+    Serial.println("I2C: incomplete read");
+    delay(5);
+    return;
   }
 
   // Read all 32 bytes into buf
   for (int i = 0; i < BUF_SIZE; i++) {
-      buf[i] = Wire.read();
+    buf[i] = Wire.read();
   }
-  buf[BUF_SIZE] = '\0'; // null-terminate
+  buf[BUF_SIZE] = '\0';  // null-terminate
 
   // Remove trailing spaces
   int len = BUF_SIZE;
@@ -173,56 +172,22 @@ void recieveInfo() {
   // Parse 4 floats
   float f1, f2, f3, f4;
   if (sscanf(buf, "%f %f %f %f", &f1, &f2, &f3, &f4) == 4) {
-      ballX = f1;
-      ballY = f2;
-      goalX = f3;
-      goalY = f4;
+    ballX = f1;
+    ballY = f2;
+    goalX = f3;
+    goalY = f4;
   } else {
-      // parsing failed
-      ballX = ballY = goalX = goalY = 0;
+    // parsing failed
+    ballX = ballY = goalX = goalY = 0;
   }
+  Serial.print("                                      bX:  ");
   Serial.print(ballX);
-  Serial.print(" ");
-  Serial.println(ballY);
-}
-
-void goToBall() {
-  static unsigned long lastTime = millis();
-  unsigned long now = millis();
-  float dt = (now - lastTime) / 1000.0;
-  if (dt <= 0 || dt > 1) dt = 0.02;
-  lastTime = now;
-
-  // --- Targets ---
-  float targetDistance = 10.5;
-  float targetAngle = 209.3;
-
-  // --- Current readings ---
-  float dist = ballX;
-  float yaw  = getYaw();
-
-  // --- PID Outputs ---
-  float rotationCmd = rotationPID.compute(targetAngle, ballY, dt, true);
-  float translationCmd = translationPID.compute(targetDistance, dist, dt);
-
-  Serial.print("rotationCmd: ");
-  Serial.print(rotationCmd);
-  Serial.print("translationCmd: ");
-  Serial.println(translationCmd);
-
-  // Apply trapezoidal ramp
-  // currentRotationCmd = applyMotionProfile(rotationCmd, currentRotationCmd);
-  // currentTranslationCmd = applyMotionProfile(translationCmd, currentTranslationCmd);
-
-  // // --- Drive ---
-  // drive(0, fabs(currentTranslationCmd), currentRotationCmd);
-
-  drive(0, -translationCmd, rotationCmd);
-
-  if(ballX == 0.0 && ballY == 0.0) {
-    drive(0,0,0);
-    // Serial.println("drive getting 0,0");
-  }
+  Serial.print(" bY: ");
+  Serial.print(ballY);
+  Serial.print(" gX: ");
+  Serial.print(goalX);
+  Serial.print(" gY: ");
+  Serial.println(goalY);
 }
 
 void goToBallXY() {
@@ -237,7 +202,7 @@ void goToBallXY() {
   float targetY = 170;
 
   // --- Current readings ---
-  float yaw  = getYaw();
+  float yaw = getYaw();
 
   // --- PID Outputs ---
   float rotationCmd = rotationPID.compute(targetX, ballX, dt, true);
@@ -254,28 +219,136 @@ void goToBallXY() {
 
   // // --- Drive ---
   // drive(0, fabs(currentTranslationCmd), currentRotationCmd);
-  float direction;
-  if(rotationCmd < 0) {
-    direction = 360+rotationCmd*5;
+
+  if (ballX != 0.0 && ballY != 0.0) {
+    float direction = 0;
+    if (rotationCmd < 0) {
+      direction = 360 + rotationCmd * 5;
+    }
+    if (rotationCmd > 0) {
+      direction = rotationCmd * 5;
+    }
+
+    if(translationCmd > 0) {
+      drive(direction, translationCmd, rotationCmd);
+    }
+
+    if(translationCmd < 0) {
+      direction -= 180;
+      if(direction < 0) {
+        direction += 360;
+      }
+      drive(direction, translationCmd, rotationCmd);
+    }
   }
-  if(rotationCmd > 0) {
-    direction = rotationCmd*5;
+}
+
+void goToBallXYpointAtGoal() {
+  static unsigned long lastTime = millis();
+  unsigned long now = millis();
+  float dt = (now - lastTime) / 1000.0;
+  if (dt <= 0 || dt > 1) dt = 0.02;
+  lastTime = now;
+
+  // --- Targets ---
+  float targetX = 160;
+  float targetY = 200;
+
+  // --- Current readings ---
+  float yaw = getYaw();
+
+  // --- PID Outputs ---
+  float rotationCmd = rotationPID.compute(targetX, goalX, dt, true);
+  float translationCmd = translationPID.compute(targetY, ballY, dt);
+
+  Serial.print("rotCmd: ");
+  Serial.print(rotationCmd);
+  Serial.print("transCmd: ");
+  Serial.println(translationCmd);
+
+  // Apply trapezoidal ramp
+  // currentRotationCmd = applyMotionProfile(rotationCmd, currentRotationCmd);
+  // currentTranslationCmd = applyMotionProfile(translationCmd, currentTranslationCmd);
+
+  // // --- Drive ---
+  // drive(0, fabs(currentTranslationCmd), currentRotationCmd);
+  float direction = 0;
+  if (rotationCmd < 0) {
+    direction = 360 + rotationCmd * 60;
+  }
+  if (rotationCmd > 0) {
+    direction = rotationCmd * 60;
+  }
+
+  if(translationCmd > 0) {
+    drive(direction, translationCmd, rotationCmd);
+  }
+
+  if(translationCmd < 0) {
+    direction -= 180;
+    if(direction < 0) {
+      direction += 360;
+    }
+    drive(direction, translationCmd, rotationCmd);
+  }
+
+  if (ballX == 0.0 && ballY == 0.0) {
+    drive(0, 0, 0);
+    Serial.println("drive getting 0,0");
+  }
+}
+
+void goToBallXYpointNOGOAL() {
+  static unsigned long lastTime = millis();
+  unsigned long now = millis();
+  float dt = (now - lastTime) / 1000.0;
+  if (dt <= 0 || dt > 1) dt = 0.02;
+  lastTime = now;
+
+  // --- Targets ---
+  float targetX = 160;
+  float targetY = 200;
+
+  // --- Current readings ---
+  float yaw = getYaw();
+
+  // --- PID Outputs ---
+  float rotationCmd = rotationPID.compute(yaw, 0, dt, true);
+  float translationCmd = translationPID.compute(targetY, ballY, dt);
+
+  Serial.print("rotCmd: ");
+  Serial.print(rotationCmd);
+  Serial.print("transCmd: ");
+  Serial.println(translationCmd);
+
+  // Apply trapezoidal ramp
+  // currentRotationCmd = applyMotionProfile(rotationCmd, currentRotationCmd);
+  // currentTranslationCmd = applyMotionProfile(translationCmd, currentTranslationCmd);
+
+  // // --- Drive ---
+  // drive(0, fabs(currentTranslationCmd), currentRotationCmd);
+  float direction = 0;
+  if (rotationCmd < 0) {
+    direction = 360 + rotationCmd * 60;
+  }
+  if (rotationCmd > 0) {
+    direction = rotationCmd * 60;
   }
 
   drive(direction, translationCmd, rotationCmd);
 
-  if(ballX == 0.0 && ballY == 0.0) {
-    drive(0,0,0);
-    // Serial.println("drive getting 0,0");
+  if (ballX == 0.0 && ballY == 0.0) {
+    drive(0, 0, 0);
+    Serial.println("drive getting 0,0");
   }
 }
 
 void updateOdometry() {
-  static float vx = 0, vy = 0; // velocity estimates (m/s)
+  static float vx = 0, vy = 0;  // velocity estimates (m/s)
   static unsigned long lastTime = 0;
   unsigned long now = millis();
-  float dt = (now - lastTime) / 1000.0; // seconds
-  if (dt <= 0 || dt > 1) dt = 0.02; // fallback for first run or large gaps
+  float dt = (now - lastTime) / 1000.0;  // seconds
+  if (dt <= 0 || dt > 1) dt = 0.02;      // fallback for first run or large gaps
   lastTime = now;
 
   sh2_SensorValue_t sensorValue;
@@ -336,21 +409,15 @@ void dribble() {
 void stopdribble() {
   digitalWrite(d1, LOW);
   digitalWrite(d2, LOW);
-  analogWrite(dena, 0); 
+  analogWrite(dena, 0);
 }
 
 void drive(float direction_deg, float speed, float rotation) {
-  if (speed <= 0.05) {
-    speed = 0.05;
-  }
-  if (abs(rotation) <= 0.05) {
-    rotation = 0;
-  }
   if (speed > 1.0) {
     speed = 1.0;
   }
 
-  const float minPWM = 60.0;
+  const float minPWM = 40.0;
   const float maxPWM = 255.0;
 
   float scaledPWM = 0;
@@ -359,8 +426,8 @@ void drive(float direction_deg, float speed, float rotation) {
   }
 
   float direction_rad = direction_deg * PI / 180.0;
-  float vx = speed * cos(direction_rad);
-  float vy = speed * sin(direction_rad);
+  float vx = cos(direction_rad);
+  float vy = sin(direction_rad);
 
   float wheel_speeds[4];
   wheel_speeds[0] = vx * sin(45 * PI / 180.0) + vy * cos(45 * PI / 180.0) + rotation;
@@ -380,23 +447,35 @@ void drive(float direction_deg, float speed, float rotation) {
     }
   }
 
-  SetSpeed(3, wheel_speeds[0] * scaledPWM); //FL
-  SetSpeed(1, wheel_speeds[1] * scaledPWM); //FR
-  SetSpeed(2, wheel_speeds[3] * scaledPWM); //BL
-  SetSpeed(4, wheel_speeds[2] * scaledPWM); //BR
+  SetSpeed(3, wheel_speeds[0] * scaledPWM);  //FL
+  SetSpeed(1, wheel_speeds[1] * scaledPWM);  //FR
+  SetSpeed(2, wheel_speeds[3] * scaledPWM);  //BL
+  SetSpeed(4, wheel_speeds[2] * scaledPWM);  //BR
+
+  Serial.print("                                                                                          w1 PWM: ");
+  Serial.print(wheel_speeds[1] * scaledPWM);
+
+  Serial.print("  l 2 PWM: ");
+  Serial.print(wheel_speeds[3] * scaledPWM);
+
+  Serial.print("  w3 PWM: ");
+  Serial.print(wheel_speeds[0] * scaledPWM);
+
+  Serial.print("  w4 PWM: ");
+  Serial.println(wheel_speeds[2] * scaledPWM);
 }
 
 void FieldRelativeDrive(float joystick_direction_deg, float speed, float rotation, float gyroangle_deg) {
   float field_direction = joystick_direction_deg + gyroangle_deg;
-  if (field_direction >= 360.0) {field_direction -= 360.0;}
-  if (field_direction < 0.0) {field_direction += 360.0;}
+  if (field_direction >= 360.0) { field_direction -= 360.0; }
+  if (field_direction < 0.0) { field_direction += 360.0; }
   drive(field_direction, speed, rotation);
 }
 
 void SetSpeed(int Motor, int PWM) {
-  static int PWMValue[4] = {0, 0, 0, 0};
-  int motorA[] = {M1a, M2a, M3a, M4a};
-  int motorB[] = {M1b, M2b, M3b, M4b};
+  static int PWMValue[4] = { 0, 0, 0, 0 };
+  int motorA[] = { M1a, M2a, M3a, M4a };
+  int motorB[] = { M1b, M2b, M3b, M4b };
 
   if (Motor >= 1 && Motor <= 4) {
     int idx = Motor - 1;
@@ -435,7 +514,7 @@ bool setupBNO08x() {
 float getYaw() {
   sh2_SensorValue_t sensorValue;
   static float oldyaw;
-  
+
   if (bno.getSensorEvent(&sensorValue)) {
     if (sensorValue.sensorId == SH2_ROTATION_VECTOR) {
       float q0 = sensorValue.un.rotationVector.real;
@@ -460,4 +539,35 @@ float getYaw() {
 
 void resetYaw() {
   yawOffset = getYaw();
+}
+
+void loop() {
+  recieveInfo();
+
+  // if (ballX != 0 && ballY != 0 && goalX != 0 && goalY != 0) {
+  //   goToBallXYpointAtGoal();
+  // } 
+  // else if (ballX != 0 && ballY != 0 && goalX == 0 && goalY == 0) {
+  //   goToBallXYpointNOGOAL();
+  // }
+  // else {
+  //   drive(0, 0, 0);
+  // }
+
+  // if (ballX != 0 && ballY != 0) {
+  //   goToBallXYpointNOGOAL();
+  // }
+  // else {
+  //   drive(0, 0, 0);
+  // }
+
+  if (true) { //ballX != 0 && ballY != 0
+    goToBallXY();
+  }
+  
+  else {
+    drive(0, 0, 0);
+  }
+
+  // drive(90,0.1,0);
 }

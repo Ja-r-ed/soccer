@@ -99,17 +99,26 @@ def main():
                 ballx, bally,
                 goalx, goaly
             ))
+        if not ball_blob or not goal_blob:
+            uart.write("{:.2f} {:.2f} {:.2f} {:.2f}\n".format(
+                0, 0,
+                0, 0
+            ))    
+            print("sent: {:.2f} {:.2f} {:.2f} {:.2f}".format(
+                0, 0,
+                0, 0
+            ))
+            
+        # cycle += 1
+        # loop += 1
+        # if loop == 50:
+        #     try:
+        #         img.save("frame_%d.jpg" % cycle)
+        #         print("frame_%d.jpg" % cycle)
+        #     except:
+        #         print("Error saving image")
 
-        cycle += 1
-        loop += 1
-        if loop == 50:
-            try:
-                img.save("frame_%d.jpg" % cycle)
-                print("frame_%d.jpg" % cycle)
-            except:
-                print("Error saving image")
-
-            loop = 0
+        #     loop = 0
 
 
 if __name__ == "__main__":
